@@ -62,5 +62,6 @@ jobs:
           git add updates/bb-tea.apk updates/update.json
           if ! git diff --cached --quiet; then
             git commit -m 'Publish signed BB Tea v1.1.0'
+            git pull --rebase origin bigg-boss-malayalam-app
             git push origin HEAD:bigg-boss-malayalam-app
           fi
