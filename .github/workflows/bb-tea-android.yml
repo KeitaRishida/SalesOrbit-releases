@@ -23,8 +23,13 @@ jobs:
           gradle-version: '8.9'
       - name: Install SDK
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+          SDK_TOOL=$(find /usr/local/lib/android/sdk -type f -name sdkmanager 2>/dev/null | head -n1)
+          if [ -n "$SDK_TOOL" ]; then
+            yes | "$SDK_TOOL" --licenses > /dev/null || true
+            "$SDK_TOOL" 'platforms;android-35' 'build-tools;35.0.0'
+          else
+            echo "SDK manager unavailable; using preinstalled SDK platforms"
+          fi
       - name: Compile Android APK
         run: gradle --no-daemon --stacktrace :app:assembleRelease
       - name: Stage APK and metadata
