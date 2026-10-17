@@ -16,7 +16,7 @@ QUERIES=['Bigg Boss Malayalam Season 8','BBMS8 Malayalam','ബിഗ് ബോ�
 CHANNELS=[('UCp_r6Z-Oh0YTf-ym71z5Nqg','Asianet','official'),('UCEMJD5tkA88xBDM1Or7wWAw','BIG BOSS MALLU TALKS','discussion')]
 HEADERS={'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36','Accept-Language':'en-IN,en;q=0.9'}
 OLD=re.compile(r'(?:\b(?:season|s)\s*[-:#]?\s*[1-7]\b|\bbbms?[1-7]\b|സീസ[ൺണ്\u200d\u200c]*\s*[1-7])',re.I)
-NEW=re.compile(r'(?:\b(?:season|s)\s*[-:#]?\s*8\b|\bbbms?8(?:promo)?\b|\bbigg?\s*boss\s*(?:malayalam\s*)?8\b|\bbigg?\s*boss\s*malayalam\b|#biggbossmalayalam|സീസ[ൺണ്\u200d\u200c]*\s*8)',re.I)
+NEW=re.compile(r'(?:\b(?:season|s)\s*[-:#]?\s*8\b|\bbbms?8[a-z]*\b|\bbigg?\s*boss\s*(?:malayalam\s*)?8\b|\bbigg?\s*boss\s*malayalam\b|#biggbossmalayalam|സീസ[ൺണ്\u200d\u200c]*\s*8)',re.I)
 MAL=re.compile(r'(?:malayalam|mallu|asianet|കേരള|മലയാള|ബിഗ്.?ബോസ്|bbms?8)',re.I)
 OTHER=re.compile(r'bigg?\s*boss\s*(?:hindi|tamil|telugu|kannada|marathi|bengali)',re.I)
 AGE=re.compile(r'(\d+)\s*(second|minute|hour|day|week|month|year)s?\s*ago',re.I)
@@ -61,7 +61,7 @@ def search(query):
         desc=text(raw.get('descriptionSnippet'))+' '+' '.join(text(x.get('snippetText')) for x in raw.get('detailedMetadataSnippets',[]))
         when=text(raw.get('publishedTimeText'));time=published(when)
         if eligible(title,desc,owner,time):
-            found.append({'id':video_id,'title':title,'channel':owner,'category':'official' if owner.lower().strip() in ('asianet','jiohotstar malayalam') else 'discussion','when':when,'published':time,'approximate':True,'source':'YouTube search'})
+            found.append({'id':video_id,'title':title,'channel':owner,'category':'official' if owner.lower().strip() in ('asianet','jiohotstar malayalam') else 'discussion','when':when,'description':desc[:500],'published':time,'approximate':True,'source':'YouTube search'})
     return found
 
 def rss(channel,owner,category):
@@ -74,7 +74,7 @@ def rss(channel,owner,category):
         def get(path):return item.findtext(path,'',namespaces=ns)
         title=get('a:title');description=get('media:group/media:description');published_dt=dt.datetime.fromisoformat(get('a:published').replace('Z','+00:00'))
         ts=int(published_dt.timestamp()*1000)
-        if eligible(title,description,owner,ts):results.append({'id':get('yt:videoId'),'title':title,'channel':owner,'category':category,'when':'','published':ts,'approximate':False,'source':'YouTube channel'})
+        if eligible(title,description,owner,ts):results.append({'id':get('yt:videoId'),'title':title,'channel':owner,'category':category,'when':'','description':description[:500],'published':ts,'approximate':False,'source':'YouTube channel'})
     return results
 
 def main():

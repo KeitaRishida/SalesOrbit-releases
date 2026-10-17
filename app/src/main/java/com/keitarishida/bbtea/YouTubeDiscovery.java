@@ -38,24 +38,24 @@ final class YouTubeDiscovery {
     static final long EARLIEST_MS = Instant.parse("2026-08-01T00:00:00Z").toEpochMilli();
     static final Pattern ID = Pattern.compile("[a-zA-Z0-9_-]{11}");
     static final Pattern OLD = Pattern.compile("(?i)(?:\\b(?:season|seasons|s)\\s*[-:#]?\\s*[1-7]\\b|\\bbbms?[1-7]\\b|സീസ[ൺണ്\\u200d\\u200c]*\\s*[1-7])");
-    static final Pattern NEW = Pattern.compile("(?i)(?:\\b(?:season|s)\\s*[-:#]?\\s*8\\b|\\bbbms?8(?:promo)?\\b|\\bbig\\s*g?\\s*boss\\s*(?:malayalam\\s*)?8\\b|\\bbig\\s*g?\\s*boss\\s*malayalam\\b|#biggbossmalayalam|#bbm8|#bbms8|സീസ[ൺണ്\\u200d\\u200c]*\\s*8)");
+    static final Pattern NEW = Pattern.compile("(?i)(?:\\b(?:season|s)\\s*[-:#]?\\s*8\\b|\\bbbms?8[a-z]*\\b|\\bbig\\s*g?\\s*boss\\s*(?:malayalam\\s*)?8\\b|\\bbig\\s*g?\\s*boss\\s*malayalam\\b|#biggbossmalayalam|#bbm8|#bbms8|സീസ[ൺണ്\\u200d\\u200c]*\\s*8)");
     static final Pattern MALAYALAM = Pattern.compile("(?i)(?:malayalam|mallu|കേരള|മലയാള|ബിഗ്.?\\s*ബോസ്|ബിഗ്.?ബോസ്|bbm8|bbms8|asianet)");
     static final Pattern OTHER_LANGUAGE = Pattern.compile("(?i)(?:bigg?\\s*boss\\s*(?:hindi|kannada|tamil|telugu|marathi|bengali)|\\bbb(?:k|t|h)\\s*8\\b)");
     private YouTubeDiscovery() { }
 
     static class Item {
-        String id="", title="", channel="", category="discussion", when="", source="";
+        String id="", title="", channel="", category="discussion", when="", source="", description="";
         long published=0;
         boolean approximate=true;
         JSONObject json() throws Exception {
             JSONObject j=new JSONObject();j.put("id",id);j.put("title",title);j.put("channel",channel);
             j.put("category",category);j.put("published",published);j.put("when",when);
-            j.put("approximate",approximate);j.put("source",source);return j;
+            j.put("approximate",approximate);j.put("source",source);j.put("description",description);return j;
         }
         static Item fromJson(JSONObject j) {
             Item v=new Item();v.id=j.optString("id");v.title=j.optString("title");v.channel=j.optString("channel");
             v.category=j.optString("category","discussion");v.published=j.optLong("published",0);
-            v.when=j.optString("when");v.approximate=j.optBoolean("approximate",false);v.source=j.optString("source");return v;
+            v.when=j.optString("when");v.description=j.optString("description");v.approximate=j.optBoolean("approximate",false);v.source=j.optString("source");return v;
         }
     }
     static class Batch {
@@ -74,7 +74,7 @@ final class YouTubeDiscovery {
         // If title explicitly says "Bigg Boss Malayalam", that's already a current-show match.
         if(!explicitSeason || !malayalamContext)return false;
         // Exclude videos clearly talking about a different season even when hashtags mention 8.
-        if(OLD.matcher(title+" "+description).find() && !Pattern.compile("(?i)(?:\\bbbms?8(?:promo)?\\b|\\bseason\\s*8\\b|സീസൺ\\s*8)").matcher(title).find())return false;
+        if(OLD.matcher(title+" "+description).find() && !Pattern.compile("(?i)(?:\\bbbms?8[a-z]*\\b|\\bseason\\s*8\\b|സീസൺ\\s*8)").matcher(title).find())return false;
         return true;
     }
     static String get(String address) throws Exception {
@@ -141,9 +141,9 @@ final class YouTubeDiscovery {
         if(owner.isEmpty())owner=richText(r.optJSONObject("shortBylineText"));
         String when=richText(r.optJSONObject("publishedTimeText"));
         long date=parseRelative(when);if(date==0)return null; // never fake an upload date
-        if(!relevant(title,description(r),owner,date))return null;
+        String desc=description(r);if(!relevant(title,desc,owner,date))return null;
         Item v=new Item();v.id=id;v.title=title;v.channel=owner;v.when=when;
-        v.published=date;v.approximate=true;v.category=isOfficial(owner)?"official":"discussion";v.source="YouTube search";return v;
+        v.published=date;v.description=desc;v.approximate=true;v.category=isOfficial(owner)?"official":"discussion";v.source="YouTube search";return v;
     }
     static Item extractLockup(JSONObject r){
         String id=r.optString("contentId","");if(!ID.matcher(id).matches())return null;
@@ -154,7 +154,7 @@ final class YouTubeDiscovery {
         long date=parseRelative(when);if(date==0)return null;
         String meta=metadata.toString();if(!relevant(title,meta,"",date))return null;
         Item v=new Item();v.id=id;v.title=title;v.channel="YouTube creator";v.when=when;v.published=date;
-        v.category="discussion";v.source="YouTube search";return v;
+        v.description=meta;v.category="discussion";v.source="YouTube search";return v;
     }
     private static void collectStrings(Object node,ArrayList<String> out,int depth){if(node==null||depth>12||out.size()>50)return;
         if(node instanceof JSONObject){JSONObject j=(JSONObject)node;String content=j.optString("content","");if(!content.isEmpty())out.add(content);
@@ -182,7 +182,7 @@ final class YouTubeDiscovery {
                     else if("published".equals(tag)){String t=p.nextText();try{item.published=Instant.parse(t).toEpochMilli();}catch(Exception e){item.published=OffsetDateTime.parse(t).toInstant().toEpochMilli();}item.approximate=false;}
                     else if("description".equals(tag))desc=p.nextText();}
             }else if(event==XmlPullParser.END_TAG){if("author".equals(tag))author=false;
-                if("entry".equals(tag)&&item!=null){if(ID.matcher(item.id).matches()&&relevant(item.title,desc,item.channel,item.published))out.add(item);item=null;}}
+                if("entry".equals(tag)&&item!=null){if(ID.matcher(item.id).matches()&&relevant(item.title,desc,item.channel,item.published)){item.description=desc;out.add(item);}item=null;}}
         }
         return out;
     }
@@ -191,7 +191,7 @@ final class YouTubeDiscovery {
         JSONObject root=new JSONObject(s);if(root.optInt("season",SEASON)!=SEASON)throw new Exception("Backup season mismatch");
         JSONArray array=root.optJSONArray("videos");ArrayList<Item> out=new ArrayList<>();
         if(array!=null)for(int i=0;i<array.length();i++){JSONObject j=array.optJSONObject(i);if(j==null)continue;Item v=Item.fromJson(j);
-            if(ID.matcher(v.id).matches()&&relevant(v.title,j.optString("description"),v.channel,v.published))out.add(v);}
+            if(ID.matcher(v.id).matches()&&relevant(v.title,v.description,v.channel,v.published))out.add(v);}
         return out;
     }
 }
