@@ -31,5 +31,6 @@ jobs:
           git add feed/videos.json
           if ! git diff --cached --quiet; then
             git commit -m 'Update recent Bigg Boss Malayalam Season 8 videos'
+            git pull --rebase origin bigg-boss-malayalam-app
             git push origin HEAD:bigg-boss-malayalam-app
           fi
