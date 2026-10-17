@@ -1,0 +1,35 @@
+name: Refresh BB Tea YouTube feed
+on:
+  push:
+    branches: [bigg-boss-malayalam-app]
+    paths:
+      - 'scripts/**'
+      - '.github/workflows/bb-tea-feed.yml'
+  schedule:
+    - cron: '29 */3 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: bigg-boss-malayalam-app
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check feed filters
+        run: python -m unittest discover -s scripts -p 'test_*.py'
+      - name: Discover new YouTube videos
+        run: python scripts/update_feed.py
+      - name: Publish feed when updated
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add feed/videos.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'Update recent Bigg Boss Malayalam Season 8 videos'
+            git push origin HEAD:bigg-boss-malayalam-app
+          fi

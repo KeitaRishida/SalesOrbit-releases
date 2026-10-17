@@ -18,6 +18,7 @@ import android.util.LruCache;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -51,25 +52,15 @@ import java.util.concurrent.Executors;
 public class MainActivity extends Activity {
     private static final int BACK = 0xFFFAF8F5, TEXT = 0xFF211B2F, MUTED = 0xFF79717B, PURPLE = 0xFF6754A4, EDGE = 0xFFECE6E8;
     private static final String UPDATES_URL = "https://raw.githubusercontent.com/KeitaRishida/SalesOrbit-releases/bigg-boss-malayalam-app/updates/update.json";
-    // Verified public YouTube channel IDs: Big Boss Mallu Talks, official Asianet.
-    private static final String[][] CHANNELS = {
-            {"UCEMJD5tkA88xBDM1Or7wWAw", "BIG BOSS MALLU TALKS", "discussion"},
-            {"UCp_r6Z-Oh0YTf-ym71z5Nqg", "Asianet", "official"}
-    };
-    private final ExecutorService workers = Executors.newFixedThreadPool(4);
+    private final ExecutorService workers = Executors.newFixedThreadPool(6);
     private final Handler main = new Handler(Looper.getMainLooper());
     private final LruCache<String, Bitmap> imageCache = new LruCache<>(24);
-    private final ArrayList<Video> entries = new ArrayList<>();
+    private final ArrayList<YouTubeDiscovery.Item> entries = new ArrayList<>();
     private LinearLayout cards, chips;
-    private TextView info, updateStatus;
+    private TextView info, empty, updateStatus;
     private boolean loading = false;
     private String filter = "all";
 
-    private static class Video {
-        String id="", title="", channel="", category="discussion";
-        long published;
-        JSONObject json() throws Exception {JSONObject j = new JSONObject(); j.put("id",id); j.put("title",title); j.put("channel",channel); j.put("category",category); j.put("published",published);return j;}
-    }
     @Override public void onCreate(Bundle bundle) {
         super.onCreate(bundle);
         getWindow().setStatusBarColor(BACK);
@@ -91,89 +82,69 @@ public class MainActivity extends Activity {
         head.addView(names,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1));
         TextView reload=text("↻",29,PURPLE,true);reload.setGravity(Gravity.CENTER);reload.setContentDescription("Refresh latest YouTube uploads");reload.setBackground(shape(0xFFF0EBF7,0,22));head.addView(reload,new LinearLayout.LayoutParams(dp(48),dp(48)));reload.setOnClickListener(v->refresh());page.addView(head);
         TextView tag=text("What's the latest tea? ☕",23,TEXT,true);tag.setPadding(0,dp(28),0,dp(6));page.addView(tag);
-        TextView summary=text("New Malayalam Bigg Boss videos, in upload order. Tap a story to watch it on YouTube.",14,MUTED,false);summary.setLineSpacing(dp(3),1f);page.addView(summary);
+        TextView summary=text("Season 8 videos and gossip from YouTube. Newest first. Tap to watch.",14,MUTED,false);summary.setLineSpacing(dp(3),1f);page.addView(summary);
         info=text("Checking YouTube…",12,MUTED,false);info.setPadding(0,dp(16),0,dp(14));page.addView(info);
         chips=new LinearLayout(this);chips.setGravity(Gravity.CENTER_VERTICAL);page.addView(chips);drawFilters();
         cards=vertical();LinearLayout.LayoutParams clp=new LinearLayout.LayoutParams(-1,-2);clp.topMargin=dp(15);page.addView(cards,clp);
-        TextView empty=text("Finding the latest updates…",16,MUTED,false);empty.setGravity(Gravity.CENTER);empty.setPadding(dp(18),dp(45),dp(18),dp(45));cards.addView(empty);
+        empty=text("Finding the latest updates…",16,MUTED,false);empty.setGravity(Gravity.CENTER);empty.setPadding(dp(18),dp(45),dp(18),dp(45));cards.addView(empty);
         LinearLayout foot=vertical();foot.setPadding(0,dp(18),0,0);page.addView(foot);
-        TextView search=text("See more videos on YouTube  ↗",14,PURPLE,true);search.setGravity(Gravity.CENTER);search.setPadding(dp(16),dp(16),dp(16),dp(16));search.setBackground(shape(0xFFF0EBF7,0,18));foot.addView(search);search.setOnClickListener(v->open("https://www.youtube.com/results?search_query=Bigg+Boss+Malayalam+Season+8+latest&sp=CAI%3D"));
+        TextView search=text("Search more on YouTube  ↗",14,PURPLE,true);search.setGravity(Gravity.CENTER);search.setPadding(dp(16),dp(16),dp(16),dp(16));search.setBackground(shape(0xFFF0EBF7,0,18));foot.addView(search);search.setOnClickListener(v->open("https://www.youtube.com/results?search_query=Bigg+Boss+Malayalam+Season+8+latest&sp=CAI%3D"));
         updateStatus=text("Check for app updates",12,MUTED,false);updateStatus.setGravity(Gravity.CENTER);updateStatus.setPadding(0,dp(22),0,dp(10));foot.addView(updateStatus);updateStatus.setOnClickListener(v->checkUpdate(true));
-        TextView note=text("Unofficial fan app · Upload dates are from YouTube. Commentary, opinions and rumours are not confirmed show announcements.",11,MUTED,false);note.setGravity(Gravity.CENTER);note.setLineSpacing(dp(3),1f);foot.addView(note);
+        TextView note=text("Unofficial fan app · Search timestamps are approximate; channel-feed timestamps are exact. Rumours and opinions are not official announcements.",11,MUTED,false);note.setGravity(Gravity.CENTER);note.setLineSpacing(dp(3),1f);foot.addView(note);
         setContentView(scroll);
     }
     private void drawFilters(){
         if(chips==null)return;chips.removeAllViews();String[][] types={{"all","All updates"},{"official","Official"},{"discussion","Tea & reviews"}};
         for(String[] type:types){boolean selected=type[0].equals(filter);TextView b=text(type[1],12,selected?Color.WHITE:PURPLE,true);b.setGravity(Gravity.CENTER);b.setPadding(dp(13),dp(12),dp(13),dp(12));b.setBackground(shape(selected?PURPLE:0xFFF0EBF7,0,24));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(42),type[0].equals("discussion")?1.3f:1f);p.rightMargin=dp(6);chips.addView(b,p);b.setOnClickListener(v->{filter=type[0];drawFilters();render();});}
     }
-    private void restore(){try{String saved=getPreferences(MODE_PRIVATE).getString("feed","");if(saved.isEmpty())return;JSONArray a=new JSONArray(saved);for(int i=0;i<a.length();i++){JSONObject j=a.getJSONObject(i);Video v=new Video();v.id=j.getString("id");v.title=j.getString("title");v.channel=j.getString("channel");v.category=j.getString("category");v.published=j.getLong("published");entries.add(v);}sort();render();info.setText("Saved updates · refreshing…");}catch(Exception ignored){}}
+    private void restore(){try{String saved=getPreferences(MODE_PRIVATE).getString("feed","");if(saved.isEmpty())return;JSONArray a=new JSONArray(saved);for(int i=0;i<a.length();i++){JSONObject j=a.getJSONObject(i);YouTubeDiscovery.Item v=YouTubeDiscovery.Item.fromJson(j);if(v.published>=YouTubeDiscovery.EARLIEST_MS)entries.add(v);}sort();render();info.setText("Saved updates · refreshing…");}catch(Exception ignored){}}
     private void refresh(){
-        if(loading)return;loading=true;info.setText("Refreshing YouTube uploads…");
+        if(loading)return;loading=true;info.setText("Searching YouTube for Season 8 videos…");
         workers.execute(()->{
-            ArrayList<Video> found=new ArrayList<>();int ok=0;
-            for(String[] channel:CHANNELS){try{found.addAll(feed(channel));ok++;}catch(Exception ignored){}}
-            final int success=ok;
+            ArrayList<YouTubeDiscovery.Item> found=new ArrayList<>();
+            ArrayList<String> errors=new ArrayList<>();int successful=0;
+            java.util.concurrent.CompletionService<ArrayList<YouTubeDiscovery.Item>> jobs = new java.util.concurrent.ExecutorCompletionService<>(workers);
+            int submitted=0;
+            for(String query:YouTubeDiscovery.QUERIES){
+                jobs.submit(()->YouTubeDiscovery.search(query).videos);submitted++;
+            }
+            jobs.submit(YouTubeDiscovery::backup);submitted++;
+            for(String[] ch:YouTubeDiscovery.CHANNELS){jobs.submit(()->YouTubeDiscovery.feed(ch));submitted++;}
+            for(int i=0;i<submitted;i++){
+                try{found.addAll(jobs.take().get());successful++;}
+                catch(Exception e){Throwable cause=e.getCause()==null?e:e.getCause();errors.add(cause.getMessage()==null?"Unavailable":cause.getMessage());}
+            }
+            int sourceCount=successful;int freshCount=found.size();String failure=errors.isEmpty()?"":errors.get(0);
             main.post(()->{
-                loading=false;
-                if(success>0){HashSet<String> seen=new HashSet<>();ArrayList<Video> merged=new ArrayList<>();
-                    // Preserve earlier entries in local cache beyond YouTube's last-15-video window.
-                    found.addAll(entries);
-                    for(Video v:found){if(!seen.contains(v.id)){seen.add(v.id);merged.add(v);}}
-                    entries.clear();entries.addAll(merged);sort();while(entries.size()>180)entries.remove(entries.size()-1);
-                    try{JSONArray a=new JSONArray();for(Video v:entries)a.put(v.json());getPreferences(MODE_PRIVATE).edit().putString("feed",a.toString()).apply();}catch(Exception ignored){}
-                    info.setText("Newest first  ·  Updated " + timeNow() + "  ·  " + entries.size() + " videos");
-                }else{info.setText(entries.isEmpty()?"Couldn't load YouTube right now. Try refresh.":"Offline · showing saved videos");}
+                if(isFinishing())return;loading=false;
+                HashSet<String> seen=new HashSet<>();ArrayList<YouTubeDiscovery.Item> merged=new ArrayList<>();
+                found.addAll(entries);
+                // Prefer exact RSS timestamps over approximate YouTube search timestamps.
+                for(YouTubeDiscovery.Item v:found)if(!v.approximate && v.published>=YouTubeDiscovery.EARLIEST_MS && seen.add(v.id))merged.add(v);
+                for(YouTubeDiscovery.Item v:found)if(v.published>=YouTubeDiscovery.EARLIEST_MS && seen.add(v.id))merged.add(v);
+                entries.clear();entries.addAll(merged);sort();while(entries.size()>180)entries.remove(entries.size()-1);
+                if(!entries.isEmpty()){
+                    try{JSONArray arr=new JSONArray();for(YouTubeDiscovery.Item v:entries)arr.put(v.json());getPreferences(MODE_PRIVATE).edit().putString("feed",arr.toString()).apply();}catch(Exception ignored){}
+                    info.setText(entries.size()+" videos · newest first · checked "+timeNow()+ (freshCount==0?" · cached":""));
+                }else if(sourceCount==0){
+                    info.setText("YouTube couldn't be reached. Check internet and tap ↻. "+failure);
+                }else{
+                    info.setText("No Season 8 matches found. Search YouTube below or retry. "+failure);
+                }
                 render();
             });
         });
     }
-    private ArrayList<Video> feed(String[] channel) throws Exception {
-        ArrayList<Video> out=new ArrayList<>();
-        String url="https://www.youtube.com/feeds/videos.xml?channel_id="+channel[0];
-        HttpURLConnection conn=(HttpURLConnection)new URL(url).openConnection();
-        conn.setConnectTimeout(9000);conn.setReadTimeout(9000);
-        conn.setRequestProperty("User-Agent","Mozilla/5.0 (compatible; BBTea/1.0)");conn.setRequestProperty("Accept","application/atom+xml, application/xml, */*");
-        try(InputStream in=conn.getInputStream()){
-            XmlPullParser p=Xml.newPullParser();p.setInput(in,"UTF-8");int event;Video item=null;boolean author=false;String description="";
-            while((event=p.next())!=XmlPullParser.END_DOCUMENT){
-                String tag=p.getName();
-                if(event==XmlPullParser.START_TAG){
-                    if("entry".equals(tag)){item=new Video();item.channel=channel[1];item.category=channel[2];description="";}
-                    else if(item!=null){
-                        if("author".equals(tag))author=true;
-                        else if("videoId".equals(tag))item.id=p.nextText();
-                        else if("title".equals(tag) && !author && item.title.isEmpty())item.title=p.nextText();
-                        else if("name".equals(tag) && author)item.channel=p.nextText();
-                        else if("published".equals(tag)){
-                            String when=p.nextText();try{item.published=Instant.parse(when).toEpochMilli();}catch(Exception e){item.published=OffsetDateTime.parse(when).toInstant().toEpochMilli();}
-                        }else if("description".equals(tag))description=p.nextText();
-                    }
-                }else if(event==XmlPullParser.END_TAG){
-                    if("author".equals(tag))author=false;
-                    if("entry".equals(tag) && item!=null){if(eligible(item,description))out.add(item);item=null;}
-                }
-            }
-        }finally{conn.disconnect();}
-        return out;
-    }
-    private boolean eligible(Video v,String description){
-        if(v.id.isEmpty()||v.title.isEmpty()||v.published<=0)return false;
-        String title=v.title.toLowerCase(Locale.ROOT);String all=(v.title+" "+description).toLowerCase(Locale.ROOT);
-        if(title.contains("bigg boss hindi") || title.contains("bigg boss tamil")||title.contains("bigg boss telugu")||title.contains("bigg boss kannada")||title.contains("bigg boss 20"))return false;
-        if(title.contains("season 7")||title.contains("season 6")||title.contains("season 5")||title.contains("bbms7")||title.contains("bbms6"))return false;
-        boolean explicit=title.contains("bigg boss")||title.contains("big boss")||title.contains("bbms8")||title.contains("bbm8")||title.contains("ബിഗ് ബോസ്")||title.contains("ബിഗ്‌ബോസ്")||title.contains("ബിഗ്ബോസ്")||title.contains("ബിഗ് ബോസ്");
-        boolean tagged=all.contains("#bbms8")||all.contains("#biggbossmalayalamseason8")||all.contains("bigg boss malayalam season 8");
-        return explicit||tagged;
-    }
     private void sort(){Collections.sort(entries,(a,b)->Long.compare(b.published,a.published));}
+    private String dateOnly(long time){SimpleDateFormat f=new SimpleDateFormat("d MMM yyyy",Locale.ENGLISH);f.setTimeZone(TimeZone.getTimeZone("Asia/Kolkata"));return f.format(new Date(time));}
     private String timeNow(){return new SimpleDateFormat("h:mm a",Locale.ENGLISH).format(new Date());}
     private String date(long time){SimpleDateFormat f=new SimpleDateFormat("d MMM yyyy · h:mm a",Locale.ENGLISH);f.setTimeZone(TimeZone.getTimeZone("Asia/Kolkata"));return f.format(new Date(time))+" IST";}
     private void render(){
         if(cards==null)return;cards.removeAllViews();int count=0;
-        for(Video v:entries){if(!filter.equals("all")&&!v.category.equals(filter))continue;card(v);count++;}
-        if(count==0){String message=loading?"Looking for the latest tea…":entries.isEmpty()?"Nothing loaded yet. Tap ↻ to try again.":"No videos in this category yet.";TextView t=text(message,15,MUTED,false);t.setGravity(Gravity.CENTER);t.setPadding(dp(14),dp(50),dp(14),dp(50));cards.addView(t);}
+        for(YouTubeDiscovery.Item v:entries){if(!filter.equals("all")&&!v.category.equals(filter))continue;card(v);count++;}
+        if(count==0){String message=loading?"Looking for the latest tea…":entries.isEmpty()?"No matching videos loaded. Tap ↻ or use YouTube search below.":"No videos in this category yet.";TextView t=text(message,15,MUTED,false);t.setGravity(Gravity.CENTER);t.setPadding(dp(14),dp(50),dp(14),dp(50));cards.addView(t);}
     }
-    private void card(Video v){
+    private void card(YouTubeDiscovery.Item v){
         LinearLayout outer=vertical();outer.setBackground(shape(Color.WHITE,EDGE,20));outer.setPadding(dp(12),dp(12),dp(12),dp(13));
         LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.TOP);outer.addView(row);
         ImageView picture=new ImageView(this);picture.setScaleType(ImageView.ScaleType.CENTER_CROP);picture.setImageResource(R.drawable.ic_launcher);picture.setBackground(shape(0xFF101F43,0,13));picture.setClipToOutline(true);
@@ -183,7 +154,7 @@ public class MainActivity extends Activity {
         TextView kind=text(label,10,v.category.equals("official")?0xFF346B5B:PURPLE,true);details.addView(kind);
         TextView title=text(v.title,14,TEXT,true);title.setMaxLines(3);title.setEllipsize(TextUtils.TruncateAt.END);title.setLineSpacing(dp(2),1f);LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(-1,-2);tp.topMargin=dp(6);details.addView(title,tp);
         TextView channel=text(v.channel,11,MUTED,false);channel.setMaxLines(1);channel.setEllipsize(TextUtils.TruncateAt.END);LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2);cp.topMargin=dp(8);details.addView(channel,cp);
-        TextView posted=text("Uploaded  " + date(v.published) + "   ›",11,MUTED,false);posted.setPadding(0,dp(12),0,0);outer.addView(posted);
+        TextView posted=text("Uploaded " + (v.approximate ? "about " + (v.when.isEmpty()?dateOnly(v.published):v.when) : date(v.published)) + "   ›",11,MUTED,false);posted.setPadding(0,dp(12),0,0);outer.addView(posted);
         outer.setOnClickListener(w->open("https://www.youtube.com/watch?v="+v.id));
         LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(11);cards.addView(outer,p);
     }
