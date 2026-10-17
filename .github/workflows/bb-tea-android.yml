@@ -1,0 +1,56 @@
+name: Build BB Tea Android
+on:
+  push:
+    branches: [bigg-boss-malayalam-app]
+    paths-ignore:
+      - 'updates/**'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: bigg-boss-malayalam-app
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Install SDK
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Compile Android APK
+        run: gradle --no-daemon --stacktrace :app:assembleRelease
+      - name: Stage APK and metadata
+        run: |
+          mkdir -p updates
+          cp app/build/outputs/apk/release/app-release.apk updates/bb-tea.apk
+          python3 - <<'PY'
+          import hashlib, json, pathlib
+          apk=pathlib.Path('updates/bb-tea.apk')
+          manifest={
+            'versionCode':1,
+            'versionName':'1.0.0',
+            'apkUrl':'https://raw.githubusercontent.com/KeitaRishida/SalesOrbit-releases/bigg-boss-malayalam-app/updates/bb-tea.apk',
+            'sha256':hashlib.sha256(apk.read_bytes()).hexdigest()
+          }
+          pathlib.Path('updates/update.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bb-tea-signed-apk
+          path: updates/bb-tea.apk
+      - name: Publish APK for download
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add updates/bb-tea.apk updates/update.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'Publish BB Tea Android APK'
+            git push origin HEAD:bigg-boss-malayalam-app
+          fi
